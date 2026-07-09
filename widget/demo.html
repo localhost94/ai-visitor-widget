@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ai-visitor-widget — Demo</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      background: #0f0f1e;
+      color: #e2e8f0;
+      font-family: 'Plus Jakarta Sans', 'Segoe UI', system-ui, -apple-system, sans-serif;
+      margin: 0;
+      padding: 40px 20px;
+      min-height: 100vh;
+    }
+    .container {
+      max-width: 720px;
+      margin: 0 auto;
+    }
+    h1 { font-size: 2rem; font-weight: 900; margin-bottom: 8px; }
+    h1 span { color: #a855f7; }
+    p { color: #94a3b8; line-height: 1.6; }
+    .card {
+      background: #1a1a2e;
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 14px;
+      padding: 24px;
+      margin-top: 24px;
+    }
+    code {
+      background: rgba(168,85,247,0.15);
+      color: #c4b5fd;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: .9em;
+    }
+    pre {
+      background: #12121f;
+      border-radius: 10px;
+      padding: 16px;
+      overflow-x: auto;
+      border: 1px solid rgba(255,255,255,0.07);
+    }
+    pre code { background: none; color: #86efac; padding: 0; }
+    .btn {
+      display: inline-block;
+      margin-top: 12px;
+      padding: 8px 16px;
+      background: linear-gradient(135deg, #FF6B6B, #FF8E53);
+      color: white;
+      border-radius: 10px;
+      text-decoration: none;
+      font-weight: 700;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>ai-visitor-widget <span>🤖</span></h1>
+    <p>
+      Demo page — the floating widget at the bottom right is the live visitor counter.
+      It pings <code>/api/track</code> with your current UA classified as human or AI,
+      then fetches aggregate counts from <code>/api/stats/:site</code>.
+      Reload the page to watch it increment.
+    </p>
+
+    <div class="card">
+      <p><strong>Try it:</strong> open this page in your browser → your visit is logged as <code>human</code>.
+      Then open via <code>curl</code> or a Python <code>requests</code> snippet → tagged <code>ai</code>.</p>
+      <p>Included example:</p>
+<pre><code>curl -X POST https://widget.yourdomain.com/api/track \
+  -H "Content-Type: application/json" \
+  -d '{"site":"demo","visitorType":"","userAgent":"GPTBot/1.0","path":"/","referrer":""}'</code></pre>
+      <a class="btn" href="https://github.com/localhost94/ai-visitor-widget">GitHub Repo →</a>
+    </div>
+  </div>
+
+  <!-- widget starts here -->
+  <script>
+    window.AIVW_CONFIG = {
+      // server and site filled when hosted; for this bundled demo we use relative URLs
+      server: "",
+      site: "demo",
+      position: "bottom-right",
+      theme: "dark",
+      showLabel: true
+    };
+    // For the demo, fix server to current host if left blank
+    if (!window.AIVW_CONFIG.server) {
+      window.AIVW_CONFIG.server = window.location.origin;
+    }
+  </script>
+  <script src="/embed.js"></script>
+</body>
+</html>

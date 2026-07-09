@@ -1,0 +1,8 @@
+/target
+visitors.db
+visitors.db-*
+*.db
+*.db-*
+.env
+.env.*
+!.env.example

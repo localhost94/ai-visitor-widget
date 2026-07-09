@@ -1,0 +1,17 @@
+[Unit]
+Description=AI Visitor Widget — Rust + Axum visitor counter (human vs AI)
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+WorkingDirectory=/opt/ai-visitor-widget
+ExecStart=/opt/ai-visitor-widget/ai-visitor-widget
+Environment=DB_PATH=/opt/ai-visitor-widget/data/visitors.db
+Environment=PORT=4009
+# Environment=IP_SALT=your-random-salt
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

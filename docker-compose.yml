@@ -1,0 +1,13 @@
+version: "3.9"
+services:
+  widget:
+    build: .
+    ports:
+      - "4009:4009"
+    volumes:
+      - ./data:/data
+    environment:
+      DB_PATH: /data/visitors.db
+      PORT: "4009"
+      IP_SALT: "change-me-to-a-random-string"
+    restart: unless-stopped

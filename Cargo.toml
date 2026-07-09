@@ -1,0 +1,31 @@
+[package]
+name = "ai-visitor-widget"
+version = "1.0.0"
+edition = "2021"
+authors = ["Arya Kusuma <hello@localhost94.com>"]
+license = "MIT"
+description = "A lightweight, self-hosted visitor counter widget that distinguishes human/SEO traffic from AI agent/GEO traffic. Rust + Axum + SQLite."
+repository = "https://github.com/localhost94/ai-visitor-widget"
+keywords = ["analytics", "visitor-counter", "ai-agents", "seo", "widget"]
+categories = ["web-programming", "visualization"]
+
+[[bin]]
+name = "ai-visitor-widget"
+path = "src/main.rs"
+
+[dependencies]
+axum = "0.8"
+tokio = { version = "1", features = ["full"] }
+rusqlite = { version = "0.37", features = ["bundled"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors", "trace"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
