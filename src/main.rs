@@ -68,6 +68,11 @@ fn init_db(db_path: &str) -> rusqlite::Result<Connection> {
 
         CREATE INDEX IF NOT EXISTS idx_visitors_created
             ON visitors(created_at);
+
+        -- Dedup index: one row per (site, ip_hash) per hour
+        -- prevents refresh spam from same visitor inflating counts
+        CREATE INDEX IF NOT EXISTS idx_visitors_dedup
+            ON visitors(site, ip_hash, created_at);
         "#,
     )?;
     Ok(conn)
@@ -86,7 +91,6 @@ fn classify_ua(ua: &str) -> &'static str {
     let ua_lower = ua.to_lowercase();
 
     // --- AI crawlers / agents / GEO / LLM training ---
-    // Curated list covering known AI/LLM search & training bots.
     let ai_signatures: &[&str] = &[
         // OpenAI
         "chatgpt-user", "gptbot", "oai-searchbot", "oai-embedder",
@@ -101,19 +105,17 @@ fn classify_ua(ua: &str) -> &'static str {
         "facebookexternalhit",
         // ByteDance / TikTok
         "bytedance", "tiktokinsightbot",
-        // Anthropic / LLM training general
+        // Common crawl / LLM training
         "commoncrawl", "ccbot",
-        // Bing/Copilot AI
+        // Bing/Copilot
         "bingbot", ".microsoft.com",
         // AI search / GEO startups
         "turnitinbot", "timpi", "youbot", "velenpublicwebcrawler",
         "kangaroobot", "ai-crawler", "tractable-smart-crawl",
         "awariobot", "diffbot", "imagesiftbot",
         // Generic
-        "bot",        // catch-all for bots as a last resort
-        "crawler",
-        "spider",
-        // sys-prompt style agents undiclosed UA
+        "bot", "crawler", "spider",
+        // Programmatic / headless clients
         "python-requests", "httpx", "node-fetch", "undici",
         "axios", "got/", "curl/",
     ];
@@ -137,12 +139,12 @@ fn classify_ua(ua: &str) -> &'static str {
         }
     }
 
-    // 3) Unknown scraping / headless / empty UA → treat conservatively as ai
+    // 3) Unknown / headless / empty UA → treat conservatively as ai
     if ua_lower.is_empty() || ua_lower.contains("headless") || ua_lower.contains("phantom") {
         return "ai";
     }
 
-    // 4) default: human (callers who send real brousers)
+    // 4) default: human
     "human"
 }
 
@@ -198,7 +200,29 @@ async fn track(
 
     let ip_hash = hash_ip(ip_raw, &state.salt);
 
-    let result = state.db.lock().unwrap().execute(
+    // ── Server-side dedup ──
+    // Block if this (site, ip_hash) already has a row within the last hour.
+    // Double safety alongside client-side sessionStorage dedup.
+    let db = state.db.lock().unwrap();
+    let recent_count: i64 = db
+        .query_row(
+            r#"SELECT COUNT(*) FROM visitors
+               WHERE site = ?1 AND ip_hash = ?2
+                 AND created_at >= datetime('now', '-1 hour')"#,
+            params![req.site, &ip_hash],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+
+    if recent_count > 0 {
+        // Duplicate visit — silently acknowledge without inserting
+        return (
+            StatusCode::OK,
+            Json(serde_json::json!({"ok": true, "dedup": true})),
+        );
+    }
+
+    let result = db.execute(
         r#"
         INSERT INTO visitors (site, visitor_type, user_agent, page_path, referrer, ip_hash)
         VALUES (?1, ?2, ?3, ?4, ?5, ?6)
@@ -260,7 +284,6 @@ async fn health() -> impl IntoResponse {
     })
 }
 
-// js embed endpoint serves the widget JS file from disk
 async fn serve_embed() -> impl IntoResponse {
     let js = include_str!("../widget/embed.js");
     (
@@ -302,7 +325,6 @@ async fn main() {
         .and_then(|p| p.parse().ok())
         .unwrap_or(4009);
     let salt = env::var("IP_SALT").unwrap_or_else(|_| {
-        // generate random salt at startup of not provided
         use std::time::{SystemTime, UNIX_EPOCH};
         format!(
             "salt-{}",

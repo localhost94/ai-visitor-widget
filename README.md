@@ -8,6 +8,31 @@
 
 ---
 
+## ⚡ 1-Prompt Quick Deploy (copy-paste to any AI agent)
+
+> Paste this prompt to any AI coding assistant (Cursor, Claude, Copilot, etc.) and it will deploy the entire widget on your server:
+
+```
+Clone https://github.com/localhost94/ai-visitor-widget and deploy it:
+1. Build the Rust binary: cargo build --release
+2. Install binary to /opt/ai-visitor-widget/ + create data/ dir
+3. Install systemd service from systemd/ai-visitor-widget.service
+4. Set env DB_PATH=/opt/ai-visitor-widget/data/visitors.db, PORT=4009, IP_SALT=<random-string>
+5. Enable + start the service: sudo systemctl enable --now ai-visitor-widget
+6. Add reverse proxy in Caddy/Nginx for widget.<your-domain> → 127.0.0.1:4009
+7. Add DNS A record widget.<your-domain> → <server-ip>
+8. Verify: curl https://widget.<your-domain>/api/health → {"status":"ok"}
+9. Add this snippet before </body> on my site:
+   <script>
+   (function(){window.AIVW_CONFIG={server:"https://widget.<your-domain>",site:"<your-domain>",position:"bottom-right",theme:"dark",showLabel:true};var s=document.createElement("script");s.src="https://widget.<your-domain>/embed.js";s.async=true;document.head.appendChild(s);})();
+   </script>
+10. Rebuild + deploy my site
+11. Open my site in browser, verify widget badge shows at bottom-right
+Replace <your-domain> and <server-ip> with my actual domain and server IP.
+```
+
+---
+
 ## Why?
 
 Traditional analytics (Plausible, GA, Umami) blend all pageviews together. But in 2026 a significant slice of your traffic is AI crawlers (GPTBot, ClaudeBot, PerplexityBot, Bytespider, …) and GEO/LLM-search agents. This widget shows you — at a glance, on your own site — how many of your visitors are real humans vs AI agents, with:
@@ -16,6 +41,7 @@ Traditional analytics (Plausible, GA, Umami) blend all pageviews together. But i
 - 🤖 **AI counter** — LLM training bots, AI search crawlers, programmatic/headless clients
 - 📊 Floating widget badge on any website
 - 🔒 Privacy-respecting: IP addresses are hashed with a server salt and discarded, never stored raw
+- 🚫 **No refresh inflation** — dedup on both client (sessionStorage) and server (1-hour cooldown per IP hash)
 - ⚡ Single Rust binary, SQLite database, no external services
 
 ---
@@ -102,7 +128,7 @@ Records a pageview.
 curl -X POST https://widget.yourdomain.com/api/track \
   -H "Content-Type: application/json" \
   -d '{
-    "site": "kusuma.dev",
+    "site": "yourdomain.com",
     "visitorType": "",          // "human" | "ai" | "" (auto-classify from UA)
     "userAgent": "GPTBot/1.0",
     "path": "/blog/ai-search",
@@ -112,19 +138,21 @@ curl -X POST https://widget.yourdomain.com/api/track \
 
 If `visitorType` is empty, the server classifies based on `userAgent` (see classification list below).
 
-**Response:** `{"ok": true}`
+**Response (new visit):** `{"ok": true}`
+
+**Response (dedup — same IP within 1 hour):** `{"ok": true, "dedup": true}`
 
 ### `GET /api/stats/:site`
 
 Returns aggregate count for a site.
 
 ```bash
-curl https://widget.yourdomain.com/api/stats/kusuma.dev
+curl https://widget.yourdomain.com/api/stats/yourdomain.com
 ```
 
 ```json
 {
-  "site": "kusuma.dev",
+  "site": "yourdomain.com",
   "human": 1842,
   "ai": 317,
   "total": 2159
@@ -144,6 +172,30 @@ Serves the widget JavaScript (CNAMED anywhere).
 ### `GET /demo`
 
 Live HTML demo page with the widget showing.
+
+---
+
+## Dedup: How It Works
+
+Refreshing the page should NOT increment the counter. Two layers of dedup prevent this:
+
+### Layer 1 — Client-side (sessionStorage)
+
+1. When `track()` fires, the widget checks `sessionStorage` for key `aivw_tracked_<site>`.
+2. If found → **skip the track request entirely** (no network call).
+3. If not found → fire `POST /api/track`, then on success set the flag.
+4. Session storage clears automatically when the browser tab/session closes.
+
+**Effect:** Reload the same page 100x → counter increments once. Open a new tab or incognito → new visitor.
+
+### Layer 2 — Server-side (1-hour cooldown)
+
+1. On every `POST /api/track`, the server hashes the visitor's IP + its salt.
+2. Checks: `SELECT COUNT(*) FROM visitors WHERE site = ? AND ip_hash = ? AND created_at >= datetime('now', '-1 hour')`
+3. If a row exists within the last hour → **returns `{"ok":true,"dedup":true}`** without inserting.
+4. If no row → inserts the visit.
+
+**Effect:** Even if a script bypasses client-side dedup (curl, bots), the server still blocks duplicates from the same IP within an hour.
 
 ---
 
@@ -188,22 +240,22 @@ The widget classifies each visitor based on their User-Agent. The logic lives in
 
 ## Integrating with Frameworks
 
-### Astro (kusuma.dev)
+### Astro
 
-Put the snippet in your base layout `<BaseLayout>` — e.g. `src/layouts/BaseLayout.astro`:
+Put the snippet in your base layout, e.g. `src/layouts/Layout.astro`:
 
 ```astro
 <!-- before </body> -->
 <script is:inline>
   (function () {
     window.AIVW_CONFIG = {
-      server: "https://widget.kusuma.dev",
-      site: "kusuma.dev",
+      server: "https://widget.yourdomain.com",
+      site: "yourdomain.com",
       position: "bottom-right",
       theme: "dark"
     };
     var s = document.createElement("script");
-    s.src = "https://widget.kusuma.dev/embed.js";
+    s.src = "https://widget.yourdomain.com/embed.js";
     s.async = true;
     document.head.appendChild(s);
   })();
@@ -274,7 +326,7 @@ server {
 
 ### Pattern 2: Same origin
 
-Run on the same domain as your site at a path prefix. You'd need to adjust Caddy/Nginx to route `/widget/*` to port 4009 and update `server` in the snippet accordingly.
+Run on the same domain as your site at a path prefix. Adjust Caddy/Nginx to route `/widget/*` to port 4009 and update `server` in the snippet accordingly.
 
 ---
 
@@ -377,7 +429,7 @@ Open an issue first for significant structural changes.
 
 ## Author
 
-**Arya Kusuma** — [kusuma.dev](https://kusuma.dev) · [GitHub @localhost94](https://github.com/localhost94) · "Building at scale."
+**Arya Kusuma** — [GitHub @localhost94](https://github.com/localhost94)
 
 ---
 

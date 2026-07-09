@@ -17,7 +17,7 @@
  *       (function () {
  *         window.AIVW_CONFIG = {
  *           server: "https://widget.yourdomain.com", // required
- *           site: "kusuma.dev",                       // required — your site ID
+ *           site: "yourdomain.com",                   // required — your site ID
  *           position: "bottom-right",                 // optional: top-left | top-right | bottom-left | bottom-right
  *           theme: "dark",                            // optional: dark | light
  *           showLabel: true                           // optional: show "Humans" / "AI" labels
@@ -28,10 +28,6 @@
  *         document.head.appendChild(s);
  *       })();
  *     </script>
- *
- * Alternatively, if you self-host embed.js and want a direct include:
- *
- *     <script src="/embed.js"></script>
  *
  * The script reads window.AIVW_CONFIG.
  */
@@ -135,6 +131,33 @@
   }
 
   // ---------------------------------------------------------------------------
+  // Dedup — one pageview per browser session, not per refresh
+  // ---------------------------------------------------------------------------
+  // We store a session key in sessionStorage so that reloading the same page
+  // or navigating around the site within the same browser session does NOT
+  // fire a second track request. A new browser session will count as a new
+  // visitor.
+
+  var DEDUP_KEY = "aivw_tracked_" + site;
+
+  function isAlreadyTracked() {
+    try {
+      return sessionStorage.getItem(DEDUP_KEY) === "1";
+    } catch (e) {
+      // sessionStorage can throw in privacy / incognito / embedded contexts
+      return false;
+    }
+  }
+
+  function markTracked() {
+    try {
+      sessionStorage.setItem(DEDUP_KEY, "1");
+    } catch (e) {
+      // ignore — worst case we double-count for this one session
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // Widget container
   // ---------------------------------------------------------------------------
 
@@ -215,7 +238,7 @@
       color: color,
       lineHeight: "1.2"
     });
-    num.textContent = "…";
+    num.textContent = "\u2026";
     var lbl = el("span", null, {
       fontSize: "10px",
       fontWeight: "600",
@@ -249,6 +272,9 @@
   // ---------------------------------------------------------------------------
 
   function track() {
+    // Dedup: only track once per browser session, not every pageview/refresh
+    if (isAlreadyTracked()) return;
+
     var ua = navigator.userAgent;
     var visitorType = classifyUA(ua);
 
@@ -266,9 +292,13 @@
       body: JSON.stringify(body),
       credentials: "omit",
       mode: "cors"
-    }).catch(function (e) {
-      if (console && console.warn) console.warn("[AIVW] track failed:", e);
-    });
+    })
+      .then(function (r) {
+        if (r.ok) markTracked();
+      })
+      .catch(function (e) {
+        if (console && console.warn) console.warn("[AIVW] track failed:", e);
+      });
   }
 
   function loadStats() {
@@ -284,8 +314,8 @@
       })
       .catch(function (e) {
         if (console && console.warn) console.warn("[AIVW] stats failed:", e);
-        humanCounter.num.textContent = "—";
-        aiCounter.num.textContent = "—";
+        humanCounter.num.textContent = "\u2014";
+        aiCounter.num.textContent = "\u2014";
       });
   }
 
@@ -293,8 +323,8 @@
   // Boot
   // ---------------------------------------------------------------------------
 
-  track();
-  loadStats();
+  track();       // fires once per session (dedup via sessionStorage)
+  loadStats();   // always loads current counters
   // refresh every 60s
   setInterval(loadStats, 60_000);
 
